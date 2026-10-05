@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LabDrop — IoT Lab Checkout</title>
+  <meta name="description" content="Real-time RFID lab equipment checkout dashboard powered by ESP32 and MQTT." />
+
+  <!-- Fonts: Inter (UI) + DM Serif Display (brand mark) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- MQTT library -->
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+
+  <style>
+    /* ─────────────────────────────────────────────────────────────
+       Design Tokens — warm dark palette, smooth & refined
+       ───────────────────────────────────────────────────────────── */
+    :root {
+      /* Palette */
+      --bg:           #0e0f11;      /* near-black base */
+      --bg-1:         #15171b;      /* card / panel fill */
+      --bg-2:         #1c1e24;      /* raised surface */
+      --bg-3:         #23262e;      /* hover surface */
+      --border:       rgba(255,255,255,0.07);
+      --border-hover: rgba(255,255,255,0.14);
+
+      --text:         #eeeef0;      /* primary text */
+      --text-2:       #9ea3b0;      /* secondary text */
+      --text-3:       #5b6070;      /* tertiary / disabled */
+
+      --accent:       #7c6af7;      /* violet accent */
+      --accent-glow:  rgba(124,106,247,0.20);
+      --accent-2:     #a78bfa;      /* lighter violet */
+
+      --ok:           #34d399;      /* emerald green */
+      --ok-muted:     rgba(52,211,153,0.12);
+      --warn:         #fbbf24;      /* amber */
+      --warn-muted:   rgba(251,191,36,0.12);
+      --danger:       #f87171;      /* rose */
+      --danger-muted: rgba(248,113,113,0.12);
+
+      /* Typography */
+      --font-ui:      "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-brand:   "DM Serif Display", Georgia, serif;
+      --font-mono:    "JetBrains Mono", monospace;
+
+      /* Spacing */
+      --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px;
+      --s-5: 20px; --s-6: 24px; --s-8: 32px; --s-10: 40px;
+      --s-12: 48px; --s-16: 64px;
+
+      /* Radius */
+      --r-sm: 10px;
+      --r-md: 16px;
+      --r-lg: 22px;
+      --r-xl: 28px;
+      --r-full: 9999px;
+
+      /* Shadows */
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+      --shadow-md: 0 4px 16px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.3);
+      --shadow-lg: 0 12px 40px rgba(0,0,0,0.6), 0 4px 8px rgba(0,0,0,0.4);
+      --shadow-accent: 0 0 0 1px var(--border), 0 4px 24px rgba(124,106,247,0.18);
+
+      /* Transitions */
+      --ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+      --t-fast: 120ms;
+      --t-base: 200ms;
+      --t-slow: 350ms;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-ui);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      font-size: 15px;
+      -webkit-font-smoothing: antialiased;
+      /* Subtle mesh background */
+      background-image:
+        radial-gradient(ellipse 80vw 60vh at 70% -10%, rgba(124,106,247,0.07) 0%, transparent 60%),
+        radial-gradient(ellipse 60vw 50vh at -10% 90%, rgba(52,211,153,0.04) 0%, transparent 60%);
+      min-height: 100vh;
+    }
+
+    /* ─── Scrollbar ─── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: var(--r-full); }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+
+    /* ─────────────────────────────────────────────────────────────
+       Layout
+       ───────────────────────────────────────────────────────────── */
+    .page { max-width: 1280px; margin: 0 auto; padding: var(--s-8) var(--s-6) var(--s-16); }
+
+    /* ─────────────────────────────────────────────────────────────
+       Header
+       ───────────────────────────────────────────────────────────── */
+    .app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: var(--s-4);
+      margin-bottom: var(--s-10);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: var(--s-4);
+    }
+
+    .brand-icon {
+      width: 42px; height: 42px;
+      border-radius: var(--r-md);
+      background: linear-gradient(135deg, var(--accent), #a78bfa);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 0 1px rgba(124,106,247,0.4), 0 4px 16px rgba(124,106,247,0.3);
+      flex-shrink: 0;
+    }
+
+    .brand-icon svg { width: 22px; height: 22px; color: #fff; }
+
+    .brand-text h1 {
+      font-family: var(--font-brand);
+      font-size: 26px;
+      font-weight: 400;
+      color: var(--text);
+      letter-spacing: -0.3px;
+      line-height: 1;
+    }
+
+    .brand-text .tagline {
+      font-size: 12px;
+      color: var(--text-3);
+      font-weight: 400;
+      letter-spacing: 0.02em;
+      margin-top: 2px;
+    }
+
+    /* Header controls */
+    .header-controls {
+      display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap;
+    }
+
+    /* ─────────────────────────────────────────────────────────────
+       Status Pills
+       ───────────────────────────────────────────────────────────── */
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 5px 13px;
+      font-size: 12px; font-weight: 500;
+      border-radius: var(--r-full);
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      transition: border-color var(--t-base) var(--ease),
+                  background var(--t-base) var(--ease),
+                  color var(--t-base) var(--ease);
+      white-space: nowrap;
+    }
+    .status-pill .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--text-3);
+      transition: background var(--t-base) var(--ease),
+                  box-shadow var(--t-base) var(--ease);
+      flex-shrink: 0;
+    }
+    .status-pill.on {
+      border-color: rgba(52,211,153,0.3);
+      background: rgba(52,211,153,0.06);
+      color: var(--ok);
+    }
+    .status-pill.on .dot {
+      background: var(--ok);
+      box-shadow: 0 0 6px var(--ok), 0 0 12px rgba(52,211,153,0.5);
+      animation: pulse-dot 2.5s infinite;
+    }
+    .status-pill.err .dot { background: var(--danger); }
+
+    @keyframes pulse-dot {
+      0%, 100% { box-shadow: 0 0 5px var(--ok), 0 0 10px rgba(52,211,153,0.4); }
+      50%       { box-shadow: 0 0 8px var(--ok), 0 0 18px rgba(52,211,153,0.7); }
+    }
+
+    /* ─────────────────────────────────────────────────────────────
+       Buttons
+       ───────────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: var(--font-ui); font-size: 13px; font-weight: 500;
+      padding: 7px 14px; height: 34px;
+      border-radius: var(--r-full); border: none; cursor: pointer;
+      transition: background var(--t-fast) var(--ease),
+                  transform var(--t-fast) var(--ease-spring),
+                  box-shadow var(--t-fast) var(--ease),
+                  opacity var(--t-fast);
+      white-space: nowrap;
+    }
+    .btn:active { transform: scale(0.97); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #6d5ae0);
+      color: #fff;
+      box-shadow: 0 2px 12px rgba(124,106,247,0.4);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #8b7af9, #7c6af7);
+      box-shadow: 0 4px 20px rgba(124,106,247,0.55);
+    }
+
+    .btn-surface {
+      background: var(--bg-2);
+      color: var(--text-2);
+      border: 1px solid var(--border);
+    }
+    .btn-surface:hover {
+      background: var(--bg-3);
+      color: var(--text);
+      border-color: var(--border-hover);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-3);
+      padding: 7px 10px;
+    }
+    .btn-ghost:hover { background: var(--bg-2); color: var(--text-2); }
+
+    /* Icon-only button */
+    .btn-icon {
+      width: 34px; height: 34px; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--bg-1);
+      color: var(--text-3);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+    }
+    .btn-icon:hover { background: var(--bg-2); color: var(--text-2); border-color: var(--border-hover); }
+
+    /* ─────────────────────────────────────────────────────────────
+       KPI Cards Row
+       ───────────────────────────────────────────────────────────── */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: var(--s-4);
+      margin-bottom: var(--s-8);
+    }
+    @media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 520px) { .kpi-row { grid-template-columns: 1fr 1fr; } }
+
+    .kpi-card {
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: var(--r-xl);
+      padding: var(--s-6) var(--s-6) var(--s-5);
+      position: relative; overflow: hidden;
+      transition: border-color var(--t-base) var(--ease),
+                  transform var(--t-base) var(--ease-spring),
+                  box-shadow var(--t-base) var(--ease);
+    }
+    .kpi-card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+    /* Accent top edge */
+    .kpi-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--kpi-color, var(--accent));
+      opacity: 0.7;
+    }
+
+    .kpi-label {
+      font-size: 12px; font-weight: 500; color: var(--text-3);
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin-bottom: var(--s-3);
+    }
+    .kpi-value {
+      font-size: 44px; font-weight: 700;
+      color: var(--kpi-color, var(--text));
+      letter-spacing: -2px; line-height: 1;
+      font-variant-numeric: tabular-nums;
+      transition: color var(--t-base);
+    }
+    .kpi-sub {
+      font-size: 12px; color: var(--text-3); margin-top: var(--s-2);
+    }
+
+    /* ─────────────────────────────────────────────────────────────
+       Main Two-Column Layout
+       ───────────────────────────────────────────────────────────── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1.55fr 1fr;
+      gap: var(--s-6);
+    }
+    @media (max-width: 860px) { .main-grid { grid-template-columns: 1fr; } }
+
+    /* ─────────────────────────────────────────────────────────────
+       Panel (glass card)
+       ───────────────────────────────────────────────────────────── */
+    .panel {
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: var(--r-xl);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: var(--s-3);
+      padding: var(--s-5) var(--s-6);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel-title {
+      font-size: 15px; font-weight: 600; color: var(--text);
+      display: flex; align-items: center; gap: var(--s-2);
+    }
+    .panel-title svg { color: var(--accent); flex-shrink: 0; }
+
+    .panel-badge {
+      font-size: 11px; font-weight: 500;
+      background: var(--bg-2); color: var(--text-3);
+      border: 1px solid var(--border);
+      border-radius: var(--r-full);
+      padding: 2px 8px;
+    }
+
+    /* Toolbar (search + filter tabs) */
+    .panel-toolbar {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: var(--s-3);
+      padding: var(--s-3) var(--s-6);
+      background: rgba(255,255,255,0.015);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .search-wrap {
+      display: flex; align-items: center; gap: var(--s-2);
+      flex: 1; min-width: 160px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-full);
+      padding: 6px 14px;
+      transition: border-color var(--t-base);
+    }
+    .search-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    .search-wrap svg { color: var(--text-3); flex-shrink: 0; }
+    .search-wrap input {
+      background: transparent; border: none; outline: none;
+      color: var(--text); font-family: var(--font-ui); font-size: 13px;
+      width: 100%;
+    }
+    .search-wrap input::placeholder { color: var(--text-3); }
+
+    .filter-group {
+      display: flex;
+      background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-full);
+      padding: 3px; gap: 2px;
+    }
+    .filter-btn {
+      font-size: 12px; font-weight: 500;
+      padding: 4px 12px; border-radius: var(--r-full); border: none;
+      background: transparent; color: var(--text-3); cursor: pointer;
+      transition: background var(--t-fast), color var(--t-fast), box-shadow var(--t-fast);
+    }
+    .filter-btn.active {
+      background: var(--bg-3); color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .filter-btn:hover:not(.active) { color: var(--text-2); }
+
+    /* ─────────────────────────────────────────────────────────────
+       Equipment Cards
+       ───────────────────────────────────────────────────────────── */
+    .equip-grid-wrap {
+      padding: var(--s-5) var(--s-5);
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: var(--s-4);
+      overflow-y: auto;
+      max-height: 580px;
+      flex: 1;
+    }
+
+    .equip-card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: var(--s-5);
+      display: flex; flex-direction: column; gap: var(--s-4);
+      transition: border-color var(--t-base) var(--ease),
+                  background var(--t-base) var(--ease),
+                  transform var(--t-base) var(--ease-spring),
+                  box-shadow var(--t-base) var(--ease);
+    }
+    .equip-card:hover {
+      border-color: var(--border-hover);
+      background: var(--bg-3);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .equip-card-top { display: flex; justify-content: space-between; align-items: flex-start; }
+    .equip-name { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.3; }
+    .equip-id {
+      font-family: var(--font-mono); font-size: 11px; color: var(--text-3);
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--r-sm); padding: 2px 6px; margin-top: 4px;
+      display: inline-block;
+    }
+
+    /* Status badge */
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px; font-weight: 600;
+      padding: 3px 9px; border-radius: var(--r-full);
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .status-badge .dot-sm { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .badge-available { background: var(--ok-muted); color: var(--ok); border: 1px solid rgba(52,211,153,0.2); }
+    .badge-borrowed  { background: var(--warn-muted); color: var(--warn); border: 1px solid rgba(251,191,36,0.2); }
+
+    .equip-card-footer {
+      display: flex; justify-content: space-between; align-items: center;
+      padding-top: var(--s-3); border-top: 1px solid var(--border);
+    }
+    .borrower-info {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: var(--text-2); font-weight: 500;
+    }
+    .avatar {
+      width: 22px; height: 22px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--warn), #f97316);
+      color: #fff; font-size: 10px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .ts-label { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
+
+    /* ─────────────────────────────────────────────────────────────
+       Activity Feed
+       ───────────────────────────────────────────────────────────── */
+    .activity-wrap {
+      padding: var(--s-4);
+      display: flex; flex-direction: column; gap: var(--s-3);
+      overflow-y: auto; max-height: 620px; flex: 1;
+    }
+
+    .activity-item {
+      display: flex; align-items: flex-start; gap: var(--s-3);
+      padding: var(--s-3) var(--s-4);
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      transition: border-color var(--t-base), background var(--t-base);
+      animation: fadeUp 0.25s var(--ease) both;
+    }
+    .activity-item:hover { border-color: var(--border-hover); background: var(--bg-3); }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .activity-bubble {
+      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .bubble-checkout { background: var(--warn-muted); color: var(--warn); }
+    .bubble-return   { background: var(--ok-muted); color: var(--ok); }
+    .bubble-alert    { background: var(--danger-muted); color: var(--danger); }
+
+    .activity-body { flex: 1; min-width: 0; }
+    .activity-title {
+      font-size: 13px; font-weight: 600; color: var(--text);
+      display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-2);
+    }
+    .activity-desc { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+    .activity-time { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); white-space: nowrap; }
+
+    /* ─────────────────────────────────────────────────────────────
+       Empty States
+       ───────────────────────────────────────────────────────────── */
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: var(--s-12) var(--s-6); text-align: center; gap: var(--s-3);
+      grid-column: 1 / -1;
+    }
+    .empty-icon {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: var(--bg-2); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center; color: var(--text-3);
+    }
+    .empty-state h5 { font-size: 14px; font-weight: 600; color: var(--text-2); }
+    .empty-state p  { font-size: 13px; color: var(--text-3); max-width: 280px; line-height: 1.5; }
+
+    /* ─────────────────────────────────────────────────────────────
+       Modal
+       ───────────────────────────────────────────────────────────── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.65); backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center;
+      padding: var(--s-4);
+      opacity: 0; pointer-events: none;
+      transition: opacity var(--t-slow) var(--ease);
+      z-index: 999;
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: auto; }
+
+    .modal-card {
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: var(--r-xl);
+      width: 100%; max-width: 440px;
+      box-shadow: var(--shadow-lg);
+      transform: translateY(14px) scale(0.97);
+      transition: transform var(--t-slow) var(--ease-spring);
+      overflow: hidden;
+    }
+    .modal-overlay.open .modal-card { transform: translateY(0) scale(1); }
+
+    .modal-head {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: var(--s-5) var(--s-6);
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-head h3 { font-size: 16px; font-weight: 600; }
+    .modal-body { padding: var(--s-6); display: flex; flex-direction: column; gap: var(--s-5); }
+
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-label {
+      font-size: 11px; font-weight: 600; color: var(--text-3);
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .form-input {
+      background: var(--bg-2); border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 10px 14px;
+      color: var(--text); font-family: var(--font-mono); font-size: 13px;
+      outline: none;
+      transition: border-color var(--t-base), box-shadow var(--t-base);
+    }
+    .form-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .form-hint { font-size: 12px; color: var(--text-3); line-height: 1.5; }
+
+    .modal-foot {
+      display: flex; justify-content: flex-end; gap: var(--s-2);
+      padding: var(--s-4) var(--s-6);
+      background: rgba(255,255,255,0.015);
+      border-top: 1px solid var(--border);
+    }
+
+    /* ─────────────────────────────────────────────────────────────
+       Toasts
+       ───────────────────────────────────────────────────────────── */
+    .toast-stack {
+      position: fixed; bottom: var(--s-6); right: var(--s-6);
+      display: flex; flex-direction: column; gap: var(--s-2);
+      z-index: 9999; pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto;
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: var(--r-full);
+      padding: 10px 16px;
+      font-size: 13px; font-weight: 500; color: var(--text);
+      box-shadow: var(--shadow-lg);
+      display: flex; align-items: center; gap: 10px;
+      min-width: 230px; max-width: 340px;
+      animation: toastIn 0.28s var(--ease-spring) both;
+    }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(10px) scale(0.95); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .toast-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .toast.ok   .toast-dot { background: var(--ok); }
+    .toast.warn .toast-dot { background: var(--warn); }
+    .toast.err  .toast-dot { background: var(--danger); }
+
+    /* ─────────────────────────────────────────────────────────────
+       Miscellaneous
+       ───────────────────────────────────────────────────────────── */
+    code {
+      font-family: var(--font-mono); font-size: 0.9em;
+      background: var(--bg-2); border: 1px solid var(--border);
+      border-radius: 4px; padding: 1px 5px; color: var(--accent-2);
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ─── App Header ─── -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">
+        <!-- RFID / antenna icon -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 10a7.31 7.31 0 0 0 10 10Z"/>
+          <path d="M4 14a3.31 3.31 0 0 0 6 6"/>
+          <path d="M4 6a11.31 11.31 0 0 0 16 16"/>
+          <circle cx="4" cy="20" r="1.5"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h1>LabDrop</h1>
+        <div class="tagline">Live IoT Equipment Checkout</div>
+      </div>
+    </div>
+
+    <div class="header-controls">
+      <!-- Broker status -->
+      <span class="status-pill" id="brokerPill">
+        <span class="dot"></span>
+        <span id="brokerStatus">Broker: connecting…</span>
+      </span>
+
+      <!-- Device status -->
+      <span class="status-pill" id="devicePill">
+        <span class="dot"></span>
+        <span id="deviceStatus">ESP32: unknown</span>
+      </span>
+
+      <!-- Simulate -->
+      <button class="btn btn-primary" id="btnSimulate">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        Simulate Scan
+      </button>
+
+      <!-- Export CSV -->
+      <button class="btn btn-surface" id="btnExportCsv">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Export CSV
+      </button>
+
+      <!-- Settings -->
+      <button class="btn-icon" id="btnSettings" title="MQTT Settings" aria-label="Open MQTT Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ─── KPI Cards ─── -->
+  <section class="kpi-row" aria-label="Summary Statistics">
+    <div class="kpi-card" style="--kpi-color: var(--ok)">
+      <div class="kpi-label">Available</div>
+      <div class="kpi-value" id="valAvailable">0</div>
+      <div class="kpi-sub">Ready to check out</div>
+    </div>
+    <div class="kpi-card" style="--kpi-color: var(--warn)">
+      <div class="kpi-label">Borrowed</div>
+      <div class="kpi-value" id="valBorrowed">0</div>
+      <div class="kpi-sub">Currently with students</div>
+    </div>
+    <div class="kpi-card" style="--kpi-color: var(--accent-2)">
+      <div class="kpi-label">Total Items</div>
+      <div class="kpi-value" id="valTotal">0</div>
+      <div class="kpi-sub">Registered in inventory</div>
+    </div>
+    <div class="kpi-card" style="--kpi-color: var(--danger)">
+      <div class="kpi-label">Alerts</div>
+      <div class="kpi-value" id="valAlerts">0</div>
+      <div class="kpi-sub">Unknown tag scans</div>
+    </div>
+  </section>
+
+  <!-- ─── Main Grid ─── -->
+  <div class="main-grid">
+
+    <!-- Equipment Inventory -->
+    <section class="panel" aria-label="Equipment Inventory">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="7" width="20" height="14" rx="2"/>
+            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+          </svg>
+          Equipment Inventory
+          <span class="panel-badge" id="equipBadge">0 items</span>
+        </div>
+      </div>
+
+      <div class="panel-toolbar">
+        <div class="search-wrap">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" id="searchInput" placeholder="Search by name, ID, or student…" autocomplete="off" />
+        </div>
+        <div class="filter-group">
+          <button class="filter-btn active" data-filter="all">All</button>
+          <button class="filter-btn" data-filter="available">Available</button>
+          <button class="filter-btn" data-filter="borrowed">Borrowed</button>
+        </div>
+      </div>
+
+      <div class="equip-grid-wrap" id="equipContainer">
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          </div>
+          <h5>Waiting for ESP32</h5>
+          <p>Start the Wokwi simulation or press <strong>Simulate Scan</strong> to test the UI.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Activity Feed -->
+    <section class="panel" aria-label="Activity Feed">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          Activity Feed
+          <span class="panel-badge" id="logBadge">0 events</span>
+        </div>
+        <button class="btn btn-ghost" id="btnClearLog" style="font-size:12px; height:28px; padding:4px 10px;">Clear</button>
+      </div>
+
+      <div class="activity-wrap" id="activityContainer">
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <h5>No Activity Yet</h5>
+          <p>Checkout and return events will stream here as they happen.</p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<!-- ─── Settings Modal ─── -->
+<div class="modal-overlay" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="modalTitle">MQTT Configuration</h3>
+      <button class="btn-icon" id="btnCloseSettings" aria-label="Close settings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" for="inputTopicRoot">Topic Root</label>
+        <input type="text" id="inputTopicRoot" class="form-input" placeholder="labdrop-CHANGE-ME" spellcheck="false" />
+        <div class="form-hint">Must match <code>ROOT</code> in <code>firmware/sketch.ino</code></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="inputBrokerUrl">Broker WebSocket URL</label>
+        <input type="text" id="inputBrokerUrl" class="form-input" placeholder="wss://broker.hivemq.com:8884/mqtt" spellcheck="false" />
+        <div class="form-hint">Default public HiveMQ broker (no auth).</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="btnCancelSettings">Cancel</button>
+      <button class="btn btn-primary" id="btnSaveSettings">Save &amp; Reconnect</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Toast Stack ─── -->
+<div class="toast-stack" id="toastContainer" aria-live="polite"></div>
+
+<!-- ─────────────────────────────────────────────────────────────
+     JavaScript — all MQTT & app logic, clean & modular
+     ───────────────────────────────────────────────────────────── -->
+<script>
+(() => {
+  "use strict";
+
+  /* ── Config (persisted to localStorage) ── */
+  const KEYS = { TOPIC: "labdrop_topic", BROKER: "labdrop_broker" };
+  const DEFAULTS = {
+    topicRoot: "labdrop-CHANGE-ME",
+    brokerUrl: "wss://broker.hivemq.com:8884/mqtt",
+  };
+  const cfg = {
+    topicRoot: localStorage.getItem(KEYS.TOPIC) || DEFAULTS.topicRoot,
+    brokerUrl: localStorage.getItem(KEYS.BROKER) || DEFAULTS.brokerUrl,
+  };
+
+  /* ── Application state ── */
+  const state = {
+    items: new Map(),   // id → {id, name, status, by, ts}
+    log: [],            // newest first
+    alertCount: 0,
+    brokerConnected: false,
+    deviceOnline: null, // null | true | false
+    filterTab: "all",
+  };
+
+  /* ── DOM cache ── */
+  const el = id => document.getElementById(id);
+  const dom = {
+    brokerPill: el("brokerPill"), brokerStatus: el("brokerStatus"),
+    devicePill: el("devicePill"), deviceStatus: el("deviceStatus"),
+    valAvailable: el("valAvailable"), valBorrowed: el("valBorrowed"),
+    valTotal: el("valTotal"), valAlerts: el("valAlerts"),
+    equipContainer: el("equipContainer"), equipBadge: el("equipBadge"),
+    activityContainer: el("activityContainer"), logBadge: el("logBadge"),
+    searchInput: el("searchInput"),
+    btnSimulate: el("btnSimulate"),
+    btnSettings: el("btnSettings"), settingsModal: el("settingsModal"),
+    btnCloseSettings: el("btnCloseSettings"), btnCancelSettings: el("btnCancelSettings"), btnSaveSettings: el("btnSaveSettings"),
+    inputTopicRoot: el("inputTopicRoot"), inputBrokerUrl: el("inputBrokerUrl"),
+    btnExportCsv: el("btnExportCsv"), btnClearLog: el("btnClearLog"),
+    toastContainer: el("toastContainer"),
+    filterBtns: document.querySelectorAll(".filter-btn"),
+  };
+
+  /* ── Utilities ── */
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+    ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  const fmtTime = ts => new Date((ts > 1e11 ? ts : ts * 1000)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const fmtRel = ts => {
+    const diff = Math.max(0, Math.floor((Date.now() - (ts > 1e11 ? ts : ts * 1000)) / 1000));
+    if (diff < 10) return "just now";
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    return `${Math.floor(diff / 3600)}h ago`;
+  };
+  const initials = n => (n && n !== "-") ? n.trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase() : "?";
+
+  /* ── Toasts ── */
+  const toast = (msg, type = "ok") => {
+    const t = document.createElement("div");
+    t.className = `toast ${type}`;
+    t.innerHTML = `<span class="toast-dot"></span><span>${esc(msg)}</span>`;
+    dom.toastContainer.appendChild(t);
+    setTimeout(() => { t.style.opacity = "0"; t.style.transform = "translateY(8px)"; setTimeout(() => t.remove(), 300); }, 3800);
+  };
+
+  /* ── Rendering ── */
+  const renderStatus = () => {
+    // Broker pill
+    if (state.brokerConnected) {
+      dom.brokerPill.className = "status-pill on";
+      dom.brokerStatus.textContent = "Broker: Connected";
+    } else {
+      dom.brokerPill.className = "status-pill";
+      dom.brokerStatus.textContent = "Broker: Offline";
+    }
+    // Device pill
+    if (state.deviceOnline === true) {
+      dom.devicePill.className = "status-pill on";
+      dom.deviceStatus.textContent = "ESP32: Online";
+    } else if (state.deviceOnline === false) {
+      dom.devicePill.className = "status-pill err";
+      dom.deviceStatus.textContent = "ESP32: Offline";
+    } else {
+      dom.devicePill.className = "status-pill";
+      dom.deviceStatus.textContent = "ESP32: Unknown";
+    }
+  };
+
+  const renderMetrics = () => {
+    const total = state.items.size;
+    const avail = Array.from(state.items.values()).filter(i => i.status === "available").length;
+    dom.valTotal.textContent = total;
+    dom.valAvailable.textContent = avail;
+    dom.valBorrowed.textContent = total - avail;
+    dom.valAlerts.textContent = state.alertCount;
+    dom.equipBadge.textContent = `${total} ${total === 1 ? "item" : "items"}`;
+  };
+
+  const renderEquip = () => {
+    const q = dom.searchInput.value.trim().toLowerCase();
+    const tab = state.filterTab;
+    const items = Array.from(state.items.values())
+      .filter(i => {
+        if (tab === "available" && i.status !== "available") return false;
+        if (tab === "borrowed" && i.status !== "borrowed") return false;
+        if (q) return [i.name, i.id, i.by || ""].some(v => v.toLowerCase().includes(q));
+        return true;
+      })
+      .sort((a, b) => {
+        if (a.status !== b.status) return a.status === "borrowed" ? -1 : 1;
+        return (a.name || "").localeCompare(b.name || "");
+      });
+
+    if (!items.length) {
+      dom.equipContainer.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </div>
+          <h5>No Matching Items</h5>
+          <p>${state.items.size ? "Try adjusting your search or filter." : "Start the Wokwi simulation or click <strong>Simulate Scan</strong>."}</p>
+        </div>`;
+      return;
+    }
+
+    dom.equipContainer.innerHTML = items.map(i => {
+      const borrowed = i.status === "borrowed";
+      const borrower = (i.by && i.by !== "-") ? i.by : null;
+      return `
+        <div class="equip-card">
+          <div class="equip-card-top">
+            <div>
+              <div class="equip-name">${esc(i.name)}</div>
+              <div class="equip-id">#${esc(i.id)}</div>
+            </div>
+            <span class="status-badge ${borrowed ? "badge-borrowed" : "badge-available"}">
+              <span class="dot-sm"></span>
+              ${borrowed ? "Borrowed" : "Available"}
+            </span>
+          </div>
+          <div class="equip-card-footer">
+            ${borrowed && borrower
+              ? `<div class="borrower-info"><div class="avatar">${esc(initials(borrower))}</div>${esc(borrower)}</div>`
+              : `<div class="borrower-info" style="color:var(--ok);">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  In storage
+                 </div>`}
+            <span class="ts-label" title="${i.ts ? new Date(i.ts * 1000).toLocaleString() : ""}">${fmtRel(i.ts)}</span>
+          </div>
+        </div>`;
+    }).join("");
+  };
+
+  const renderActivity = () => {
+    dom.logBadge.textContent = `${state.log.length} ${state.log.length === 1 ? "event" : "events"}`;
+    if (!state.log.length) {
+      dom.activityContainer.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+          <h5>No Events Yet</h5><p>Events stream here as students scan cards.</p>
+        </div>`;
+      return;
+    }
+    dom.activityContainer.innerHTML = state.log.slice(0, 40).map(evt => {
+      if (evt.alert) {
+        return `
+          <div class="activity-item">
+            <div class="activity-bubble bubble-alert">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div class="activity-body">
+              <div class="activity-title">
+                <span style="color:var(--danger);">Unknown Tag Scanned</span>
+                <span class="activity-time">${fmtTime(evt.ts)}</span>
+              </div>
+              <div class="activity-desc">Unrecognised RFID credential — access rejected.</div>
+            </div>
+          </div>`;
+      }
+      const isOut = evt.status === "borrowed";
+      const student = (evt.by && evt.by !== "-") ? evt.by : "Student";
+      return `
+        <div class="activity-item">
+          <div class="activity-bubble ${isOut ? "bubble-checkout" : "bubble-return"}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              ${isOut
+                ? `<path d="M5 12h14"/><path d="M12 5l7 7-7 7"/>`
+                : `<polyline points="20 6 9 17 4 12"/>`}
+            </svg>
+          </div>
+          <div class="activity-body">
+            <div class="activity-title">
+              <span>${esc(evt.name || `Item #${evt.id}`)}</span>
+              <span class="activity-time">${fmtTime(evt.ts)}</span>
+            </div>
+            <div class="activity-desc">
+              ${isOut ? "Checked out by" : "Returned by"}
+              <strong style="color:var(--text-2);">${esc(student)}</strong>
+              <span style="color:var(--text-3);"> · Tag #${esc(evt.id)}</span>
+            </div>
+          </div>
+        </div>`;
+    }).join("");
+  };
+
+  const renderAll = () => { renderStatus(); renderMetrics(); renderEquip(); renderActivity(); };
+
+  /* ── MQTT ── */
+  let client = null;
+  const initMQTT = () => {
+    if (client) { try { client.end(true); } catch (_) {} }
+    client = mqtt.connect(cfg.brokerUrl, {
+      reconnectPeriod: 3000,
+      clientId: "labdrop-" + Math.random().toString(16).slice(2, 10),
+      clean: true,
+    });
+    client.on("connect", () => {
+      state.brokerConnected = true; renderStatus();
+      client.subscribe(`${cfg.topicRoot}/#`);
+      toast("Connected to MQTT broker", "ok");
+    });
+    client.on("close", () => { state.brokerConnected = false; renderStatus(); });
+    client.on("error", () => { state.brokerConnected = false; renderStatus(); });
+    client.on("message", (topic, payload) => {
+      const base = cfg.topicRoot + "/";
+      if (!topic.startsWith(base)) return;
+      const sub = topic.slice(base.length);
+      const text = payload.toString().trim();
+      if (sub === "status") {
+        state.deviceOnline = text.toLowerCase() === "online";
+        renderStatus();
+        toast(`ESP32 is ${state.deviceOnline ? "Online" : "Offline"}`, state.deviceOnline ? "ok" : "err");
+        return;
+      }
+      if (sub === "alerts") {
+        state.alertCount++;
+        state.log.unshift({ alert: true, ts: Math.floor(Date.now() / 1000) });
+        renderAll(); toast("Unknown RFID tag scanned!", "err"); return;
+      }
+      try {
+        const d = JSON.parse(text);
+        if (!d?.id) return;
+        if (sub.startsWith("equipment/")) { state.items.set(d.id, d); renderAll(); }
+        else if (sub === "events") {
+          state.items.set(d.id, d); state.log.unshift(d); renderAll();
+          const isOut = d.status === "borrowed";
+          toast(isOut ? `${d.name} checked out by ${d.by}` : `${d.name} returned`, isOut ? "warn" : "ok");
+        }
+      } catch (_) { console.warn("Bad MQTT payload", topic); }
+    });
+  };
+  initMQTT();
+
+  /* ── Demo simulation ── */
+  const DEMO_ITEMS = [
+    { id: "024", name: "ESP32 Kit #024" },
+    { id: "011", name: "Arduino Kit #011" },
+    { id: "007", name: "Sensor Kit #007" },
+    { id: "042", name: "Oscilloscope #042" },
+  ];
+  const DEMO_STUDENTS = ["Jack", "Asha", "Devin", "Priya", "Omar"];
+
+  const runDemo = () => {
+    if (Math.random() < 0.15) {
+      state.alertCount++;
+      state.log.unshift({ alert: true, ts: Math.floor(Date.now() / 1000) });
+      renderAll(); toast("Simulated: Unknown tag!", "err"); return;
+    }
+    const item = DEMO_ITEMS[Math.floor(Math.random() * DEMO_ITEMS.length)];
+    const existing = state.items.get(item.id);
+    const ts = Math.floor(Date.now() / 1000);
+    if (existing?.status === "borrowed") {
+      const updated = { ...existing, status: "available", ts };
+      state.items.set(item.id, updated); state.log.unshift(updated);
+      toast(`${item.name} returned`, "ok");
+    } else {
+      const student = DEMO_STUDENTS[Math.floor(Math.random() * DEMO_STUDENTS.length)];
+      const updated = { id: item.id, name: item.name, status: "borrowed", by: student, ts };
+      state.items.set(item.id, updated); state.log.unshift(updated);
+      toast(`${item.name} checked out by ${student}`, "warn");
+    }
+    state.deviceOnline = true; renderAll();
+  };
+
+  /* ── CSV Export ── */
+  const exportCSV = () => {
+    if (!state.log.length) { toast("No events to export", "warn"); return; }
+    const hdr = ["logged_at", "device_time", "item_id", "item_name", "event", "student"];
+    const rows = state.log.map(e => {
+      if (e.alert) return [new Date().toISOString(), "", "UNKNOWN", "Unknown Tag", "ALERT", ""];
+      return [new Date().toISOString(), new Date(e.ts * 1000).toISOString(), e.id, e.name, e.status === "borrowed" ? "CHECKOUT" : "RETURN", e.by || ""];
+    });
+    const csv = [hdr, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    Object.assign(document.createElement("a"), { href: url, download: `labdrop_${new Date().toISOString().slice(0, 10)}.csv` }).click();
+    URL.revokeObjectURL(url); toast("CSV exported!", "ok");
+  };
+
+  /* ── Event listeners ── */
+  dom.btnSimulate.addEventListener("click", runDemo);
+  dom.btnExportCsv.addEventListener("click", exportCSV);
+  dom.searchInput.addEventListener("input", renderEquip);
+
+  dom.btnClearLog.addEventListener("click", () => {
+    if (confirm("Clear the activity log?")) { state.log = []; state.alertCount = 0; renderAll(); }
+  });
+
+  // Filter tabs
+  dom.filterBtns.forEach(btn => btn.addEventListener("click", () => {
+    dom.filterBtns.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.filterTab = btn.dataset.filter;
+    renderEquip();
+  }));
+
+  // Settings modal
+  const openModal = () => {
+    dom.inputTopicRoot.value = cfg.topicRoot;
+    dom.inputBrokerUrl.value = cfg.brokerUrl;
+    dom.settingsModal.classList.add("open");
+    setTimeout(() => dom.inputTopicRoot.focus(), 50);
+  };
+  const closeModal = () => dom.settingsModal.classList.remove("open");
+
+  dom.btnSettings.addEventListener("click", openModal);
+  dom.btnCloseSettings.addEventListener("click", closeModal);
+  dom.btnCancelSettings.addEventListener("click", closeModal);
+  dom.settingsModal.addEventListener("click", e => { if (e.target === dom.settingsModal) closeModal(); });
+
+  dom.btnSaveSettings.addEventListener("click", () => {
+    cfg.topicRoot = dom.inputTopicRoot.value.trim() || DEFAULTS.topicRoot;
+    cfg.brokerUrl = dom.inputBrokerUrl.value.trim() || DEFAULTS.brokerUrl;
+    localStorage.setItem(KEYS.TOPIC, cfg.topicRoot);
+    localStorage.setItem(KEYS.BROKER, cfg.brokerUrl);
+    closeModal(); toast("Settings saved — reconnecting…", "ok"); initMQTT();
+  });
+
+  window.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+
+  // Refresh relative timestamps every 15s
+  setInterval(renderEquip, 15_000);
+
+  // Initial render
+  renderAll();
+})();
+</script>
+</body>
+</html>
