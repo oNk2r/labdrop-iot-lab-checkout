@@ -1,0 +1,403 @@
+[
+    {
+        "id": "3fa938e8e6ea3dab",
+        "type": "tab",
+        "label": "LabDrop",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "e309283482d8f9f9",
+        "type": "comment",
+        "z": "3fa938e8e6ea3dab",
+        "name": "LabDrop MQTT flow",
+        "info": "ESP32 ROOT must be labdrop-jack-4821 (without /#). MQTT-in subscribes to labdrop-jack-4821/#. Dashboard: /ui",
+        "x": 340,
+        "y": 40,
+        "wires": []
+    },
+    {
+        "id": "64aa2560ea8dc3f6",
+        "type": "mqtt in",
+        "z": "3fa938e8e6ea3dab",
+        "name": "LabDrop topics",
+        "topic": "labdrop-jack-4821/#",
+        "qos": "1",
+        "datatype": "auto",
+        "broker": "ld_broker",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 150,
+        "y": 240,
+        "wires": [
+            [
+                "4347737db26278c8"
+            ]
+        ]
+    },
+    {
+        "id": "4347737db26278c8",
+        "type": "function",
+        "z": "3fa938e8e6ea3dab",
+        "name": "Route LabDrop messages",
+        "func": "// LabDrop topics:\n// labdrop-jack-4821/equipment/<id>\n// labdrop-jack-4821/events\n// labdrop-jack-4821/status\n// labdrop-jack-4821/alerts\nconst root = \"labdrop-jack-4821/\";\nconst topic = String(msg.topic || \"\");\nif (!topic.startsWith(root)) return null;\n\nconst parts = topic.slice(root.length).split(\"/\");\nconst kind = parts[0];\nlet d = msg.payload;\n\n// Equipment/event messages from the ESP32 are JSON.\nif (kind === \"equipment\" || kind === \"events\") {\n    if (typeof d === \"string\") {\n        try { d = JSON.parse(d); }\n        catch (e) { node.warn(\"Invalid JSON on \" + topic); return null; }\n    }\n    if (!d || !d.id || !d.name) return null;\n}\n\nconst fmt = ts => {\n    const n = Number(ts);\n    const date = n > 0 ? new Date(n > 1e12 ? n : n * 1000) : new Date();\n    return date.toLocaleString(\"en-GB\", { hour12: false });\n};\n\nconst borrowedState = d =>\n    d && (d.borrowed === true ||\n          String(d.status || \"\").toLowerCase() === \"borrowed\");\n\nconst out = [null, null, null, null, null, null, null, null];\n\nif (kind === \"equipment\") {\n    // Dynamic registry: supports all 7 items and any future items.\n    let items = flow.get(\"items\") || {};\n    const borrowed = borrowedState(d);\n\n    items[String(d.id)] = {\n        ...d,\n        id: String(d.id),\n        name: String(d.name),\n        status: borrowed ? \"borrowed\" : \"available\",\n        by: borrowed ? (d.by || d.borrower || \"-\") : \"-\"\n    };\n    flow.set(\"items\", items);\n\n    const all = Object.values(items).sort(\n        (a, b) => String(a.name).localeCompare(String(b.name))\n    );\n    const borrowedCount = all.filter(i => i.status === \"borrowed\").length;\n\n    out[0] = {\n        payload: all.map(i => ({\n            Item: i.name,\n            Status: i.status === \"borrowed\" ? \"BORROWED\" : \"AVAILABLE\",\n            Borrower: i.status === \"borrowed\" ? (i.by || \"-\") : \"-\",\n            Updated: fmt(i.ts)\n        }))\n    };\n    out[1] = { payload: all.length - borrowedCount };\n    out[2] = { payload: borrowedCount };\n}\nelse if (kind === \"events\") {\n    const event = borrowedState(d) ? \"CHECKOUT\" : \"RETURN\";\n    let log = flow.get(\"log\") || [];\n\n    log.unshift({\n        Time: fmt(d.ts),\n        Item: d.name,\n        Event: event,\n        Student: d.by || d.borrower || \"-\"\n    });\n    log = log.slice(0, 10);\n    flow.set(\"log\", log);\n\n    let counts = flow.get(\"counts\") || {};\n    if (event === \"CHECKOUT\") {\n        counts[d.name] = (counts[d.name] || 0) + 1;\n    }\n    flow.set(\"counts\", counts);\n\n    out[3] = { payload: log };\n    out[4] = { topic: d.name, payload: Number(counts[d.name] || 0) };\n    out[5] = {\n        payload: [fmt(d.ts), d.name, event, d.by || d.borrower || \"-\"].join(\",\") + \"\\n\"\n    };\n}\nelse if (kind === \"status\") {\n    out[6] = { payload: String(d).trim().toLowerCase() };\n}\nelse if (kind === \"alerts\") {\n    out[7] = {\n        topic: \"LabDrop alert\",\n        payload: typeof d === \"string\" ? d : JSON.stringify(d)\n    };\n}\nelse {\n    return null;\n}\nreturn out;",
+        "outputs": 8,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 400,
+        "y": 240,
+        "wires": [
+            [
+                "27b73b3a731436db"
+            ],
+            [
+                "f155c3f3fe1a73f3"
+            ],
+            [
+                "6acaadb7563fbd56"
+            ],
+            [
+                "d31c010a5641a5ec"
+            ],
+            [
+                "d76e22287021eb48"
+            ],
+            [
+                "594cb018e084e6dd"
+            ],
+            [
+                "b52b1941881006f2"
+            ],
+            [
+                "dd074af49cd40cce"
+            ]
+        ]
+    },
+    {
+        "id": "f155c3f3fe1a73f3",
+        "type": "ui_text",
+        "z": "3fa938e8e6ea3dab",
+        "group": "ld_g_stat",
+        "order": 1,
+        "width": 0,
+        "height": 0,
+        "name": "",
+        "label": "Available",
+        "format": "{{msg.payload}}",
+        "layout": "row-spread",
+        "className": "",
+        "style": false,
+        "font": "",
+        "fontSize": 16,
+        "color": "#000000",
+        "x": 760,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "6acaadb7563fbd56",
+        "type": "ui_text",
+        "z": "3fa938e8e6ea3dab",
+        "group": "ld_g_stat",
+        "order": 2,
+        "width": 0,
+        "height": 0,
+        "name": "",
+        "label": "Borrowed",
+        "format": "{{msg.payload}}",
+        "layout": "row-spread",
+        "className": "",
+        "style": false,
+        "font": "",
+        "fontSize": 16,
+        "color": "#000000",
+        "x": 760,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "b52b1941881006f2",
+        "type": "ui_text",
+        "z": "3fa938e8e6ea3dab",
+        "group": "ld_g_stat",
+        "order": 3,
+        "width": 0,
+        "height": 0,
+        "name": "",
+        "label": "Device",
+        "format": "{{msg.payload}}",
+        "layout": "row-spread",
+        "className": "",
+        "style": false,
+        "font": "",
+        "fontSize": 16,
+        "color": "#000000",
+        "x": 760,
+        "y": 380,
+        "wires": []
+    },
+    {
+        "id": "27b73b3a731436db",
+        "type": "ui_table",
+        "z": "3fa938e8e6ea3dab",
+        "group": "ld_g_eq",
+        "name": "Equipment table",
+        "order": 1,
+        "width": 0,
+        "height": 0,
+        "columns": [
+            {
+                "field": "Item",
+                "title": "Item",
+                "width": "35%",
+                "align": "left",
+                "formatter": "plaintext",
+                "formatterParams": {}
+            },
+            {
+                "field": "Status",
+                "title": "Status",
+                "width": "20%",
+                "align": "left",
+                "formatter": "plaintext",
+                "formatterParams": {}
+            },
+            {
+                "field": "Borrower",
+                "title": "Borrower",
+                "width": "20%",
+                "align": "left",
+                "formatter": "plaintext",
+                "formatterParams": {}
+            },
+            {
+                "field": "Updated",
+                "title": "Updated",
+                "width": "25%",
+                "align": "left",
+                "formatter": "plaintext",
+                "formatterParams": {}
+            }
+        ],
+        "outputs": 0,
+        "cts": false,
+        "x": 780,
+        "y": 140,
+        "wires": []
+    },
+    {
+        "id": "d31c010a5641a5ec",
+        "type": "ui_table",
+        "z": "3fa938e8e6ea3dab",
+        "group": "ld_g_log",
+        "name": "Recent activity table",
+        "order": 1,
+        "width": 0,
+        "height": 0,
+        "columns": [
+            {
+                "field": "Time",
+                "title": "Time",
+                "width": "25%",
+                "align": "left",
+                "formatter": "plaintext",
+                "formatterParams": {}
+            },
+            {
+                "field": "Item",
+                "title": "Item",
+                "width": "30%",
+                "align": "left",
+                "formatter": "plaintext",
+                "formatterParams": {}
+            },
+            {
+                "field": "Event",
+                "title": "Event",
+                "width": "20%",
+                "align": "left",
+                "formatter": "plaintext",
+                "formatterParams": {}
+            },
+            {
+                "field": "Student",
+                "title": "Student",
+                "width": "25%",
+                "align": "left",
+                "formatter": "plaintext",
+                "formatterParams": {}
+            }
+        ],
+        "outputs": 0,
+        "cts": false,
+        "x": 780,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "d76e22287021eb48",
+        "type": "ui_chart",
+        "z": "3fa938e8e6ea3dab",
+        "name": "Checkouts per Item",
+        "group": "ld_g_ch",
+        "order": 1,
+        "width": 0,
+        "height": 0,
+        "label": "Checkouts",
+        "chartType": "bar",
+        "legend": "false",
+        "xformat": "HH:mm:ss",
+        "interpolate": "linear",
+        "nodata": "No checkouts yet",
+        "dot": false,
+        "ymin": "0",
+        "ymax": "",
+        "removeOlder": 1,
+        "removeOlderPoints": "",
+        "removeOlderUnit": "3600",
+        "cutout": 0,
+        "useOneColor": false,
+        "useUTC": false,
+        "colors": [
+            "#1f77b4",
+            "#aec7e8",
+            "#ff7f0e",
+            "#2ca02c",
+            "#98df8a",
+            "#d62728",
+            "#ff9896",
+            "#9467bd",
+            "#c5b0d5"
+        ],
+        "outputs": 1,
+        "useDifferentColor": false,
+        "className": "",
+        "x": 770,
+        "y": 260,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "594cb018e084e6dd",
+        "type": "file",
+        "z": "3fa938e8e6ea3dab",
+        "name": "Append to labdrop_log.csv",
+        "filename": "labdrop_log.csv",
+        "filenameType": "str",
+        "appendNewline": true,
+        "createDir": true,
+        "overwriteFile": "false",
+        "encoding": "none",
+        "x": 800,
+        "y": 320,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "dd074af49cd40cce",
+        "type": "ui_toast",
+        "z": "3fa938e8e6ea3dab",
+        "position": "top right",
+        "displayTime": "4",
+        "highlight": "",
+        "sendall": true,
+        "outputs": 0,
+        "ok": "OK",
+        "cancel": "",
+        "raw": false,
+        "className": "",
+        "topic": "",
+        "name": "LabDrop alerts",
+        "x": 760,
+        "y": 440,
+        "wires": []
+    },
+    {
+        "id": "ld_broker",
+        "type": "mqtt-broker",
+        "name": "HiveMQ public",
+        "broker": "broker.hivemq.com",
+        "port": "1883",
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": "4",
+        "keepalive": "60",
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthPayload": "",
+        "closeTopic": "",
+        "closeQos": "0",
+        "closePayload": "",
+        "willTopic": "",
+        "willQos": "0",
+        "willPayload": ""
+    },
+    {
+        "id": "ld_g_stat",
+        "type": "ui_group",
+        "name": "Status",
+        "tab": "ld_uitab",
+        "order": 1,
+        "disp": true,
+        "width": "6",
+        "collapse": false
+    },
+    {
+        "id": "ld_g_eq",
+        "type": "ui_group",
+        "name": "Equipment",
+        "tab": "ld_uitab",
+        "order": 2,
+        "disp": true,
+        "width": "12",
+        "collapse": false
+    },
+    {
+        "id": "ld_g_log",
+        "type": "ui_group",
+        "name": "Recent Activity",
+        "tab": "ld_uitab",
+        "order": 3,
+        "disp": true,
+        "width": "12",
+        "collapse": false
+    },
+    {
+        "id": "ld_g_ch",
+        "type": "ui_group",
+        "name": "Checkouts per Item",
+        "tab": "ld_uitab",
+        "order": 4,
+        "disp": true,
+        "width": "6",
+        "collapse": false
+    },
+    {
+        "id": "ld_uitab",
+        "type": "ui_tab",
+        "name": "LabDrop",
+        "icon": "dashboard",
+        "order": 1,
+        "disabled": false,
+        "hidden": false
+    },
+    {
+        "id": "11316be0ac19d35d",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-dashboard": "3.6.6",
+            "node-red-node-ui-table": "0.4.5"
+        }
+    }
+]

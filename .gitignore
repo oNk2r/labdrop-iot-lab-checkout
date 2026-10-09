@@ -1,3 +1,4 @@
-labdrop_log.csv
+labdrop*.csv
+*.csv
 __pycache__/
 .DS_Store

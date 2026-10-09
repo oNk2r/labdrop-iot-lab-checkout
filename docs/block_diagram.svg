@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 480" width="100%" height="100%" style="background:#0e0f11; font-family:'Segoe UI',system-ui,sans-serif;">
+  <defs>
+    <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B6FF5"/>
+      <stop offset="100%" stop-color="#5538EE"/>
+    </linearGradient>
+    <linearGradient id="tealGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#35CFC3"/>
+      <stop offset="100%" stop-color="#00A896"/>
+    </linearGradient>
+    <linearGradient id="yellowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#F4C430"/>
+    </linearGradient>
+    <linearGradient id="coralGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#EE5253"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#8B6FF5"/>
+    </marker>
+    <marker id="arrowTeal" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#35CFC3"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="40" y="44" fill="#ffffff" font-size="22" font-weight="800" letter-spacing="-0.5">LabDrop — System Architecture Block Diagram</text>
+  <text x="40" y="68" fill="#9ea3b0" font-size="13">Smart RFID Lab Equipment Checkout &amp; Telemetry Pipeline</text>
+
+  <!-- Section 1: Inputs / Peripherals -->
+  <rect x="40" y="95" width="220" height="345" rx="14" fill="#15171b" stroke="rgba(255,255,255,0.1)" stroke-width="1.5"/>
+  <text x="56" y="125" fill="#FFE66D" font-size="12" font-weight="700" letter-spacing="1">HARDWARE PERIPHERALS</text>
+  
+  <!-- RFID Card Reader -->
+  <rect x="56" y="145" width="188" height="60" rx="8" fill="#1c1e24" stroke="rgba(255,255,255,0.08)"/>
+  <text x="70" y="170" fill="#ffffff" font-size="13" font-weight="600">RC522 RFID Reader</text>
+  <text x="70" y="190" fill="#9ea3b0" font-size="11">SPI: SS(5), SCK(18), MOSI(23), MISO(19)</text>
+
+  <!-- OLED Display -->
+  <rect x="56" y="215" width="188" height="60" rx="8" fill="#1c1e24" stroke="rgba(255,255,255,0.08)"/>
+  <text x="70" y="240" fill="#ffffff" font-size="13" font-weight="600">SSD1306 OLED (128x64)</text>
+  <text x="70" y="260" fill="#9ea3b0" font-size="11">I2C: SDA(21), SCL(22)</text>
+
+  <!-- LEDs & Buzzer -->
+  <rect x="56" y="285" width="188" height="70" rx="8" fill="#1c1e24" stroke="rgba(255,255,255,0.08)"/>
+  <text x="70" y="310" fill="#ffffff" font-size="13" font-weight="600">Audio/Visual Indicators</text>
+  <text x="70" y="328" fill="#35CFC3" font-size="11">LED Green (26) · <tspan fill="#FF6B6B">LED Red (27)</tspan></text>
+  <text x="70" y="344" fill="#9ea3b0" font-size="11">Passive Buzzer (25)</text>
+
+  <!-- Power & Ground -->
+  <rect x="56" y="365" width="188" height="55" rx="8" fill="#1c1e24" stroke="rgba(255,255,255,0.08)"/>
+  <text x="70" y="388" fill="#ffffff" font-size="12" font-weight="600">Power Rail</text>
+  <text x="70" y="406" fill="#9ea3b0" font-size="11">3.3V DC &amp; Shared Common GND</text>
+
+  <!-- Arrow to ESP32 -->
+  <line x1="260" y1="265" x2="310" y2="265" stroke="#8B6FF5" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- Section 2: Microcontroller (ESP32) -->
+  <rect x="310" y="95" width="190" height="345" rx="14" fill="#15171b" stroke="rgba(255,255,255,0.1)" stroke-width="1.5"/>
+  <text x="326" y="125" fill="#8B6FF5" font-size="12" font-weight="700" letter-spacing="1">PROCESSING UNIT</text>
+  
+  <rect x="326" y="145" width="158" height="110" rx="10" fill="url(#purpleGrad)"/>
+  <text x="342" y="176" fill="#ffffff" font-size="17" font-weight="800">ESP32 DevKit</text>
+  <text x="342" y="196" fill="#ffffff" font-size="11" opacity="0.9">Wokwi Simulation</text>
+  <text x="342" y="218" fill="#ffffff" font-size="11" font-weight="600">• Student ID State Machine</text>
+  <text x="342" y="234" fill="#ffffff" font-size="11" font-weight="600">• 10s Checkout Timeout</text>
+  <text x="342" y="248" fill="#ffffff" font-size="11" font-weight="600">• Wi-Fi &amp; NTP Client</text>
+
+  <rect x="326" y="268" width="158" height="152" rx="8" fill="#1c1e24" stroke="rgba(255,255,255,0.08)"/>
+  <text x="338" y="292" fill="#FFE66D" font-size="11" font-weight="700">MQTT CLIENT (PubSubClient)</text>
+  <text x="338" y="315" fill="#ffffff" font-size="11">Port: 1883 TCP</text>
+  <text x="338" y="333" fill="#9ea3b0" font-size="11">Last Will: <tspan fill="#FF6B6B">ROOT/status</tspan></text>
+  <text x="338" y="353" fill="#9ea3b0" font-size="10">• ROOT/equipment/&lt;id&gt; (retained)</text>
+  <text x="338" y="371" fill="#9ea3b0" font-size="10">• ROOT/events (checkout/return)</text>
+  <text x="338" y="389" fill="#9ea3b0" font-size="10">• ROOT/alerts (unknown tag)</text>
+  <text x="338" y="407" fill="#9ea3b0" font-size="10">• ROOT/status (online/offline)</text>
+
+  <!-- Arrow to MQTT Broker -->
+  <line x1="500" y1="265" x2="550" y2="265" stroke="#8B6FF5" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- Section 3: MQTT Broker -->
+  <rect x="550" y="165" width="130" height="200" rx="14" fill="#15171b" stroke="rgba(255,255,255,0.1)" stroke-width="1.5"/>
+  <rect x="562" y="180" width="106" height="65" rx="8" fill="url(#tealGrad)"/>
+  <text x="572" y="206" fill="#121212" font-size="13" font-weight="800">HiveMQ</text>
+  <text x="572" y="224" fill="#121212" font-size="10" font-weight="700">Public Broker</text>
+  <text x="562" y="265" fill="#9ea3b0" font-size="11" text-anchor="start">broker.hivemq.com</text>
+  <text x="562" y="285" fill="#ffffff" font-size="11" font-weight="600">TCP: 1883</text>
+  <text x="562" y="303" fill="#ffffff" font-size="11" font-weight="600">WSS: 8884</text>
+  <text x="562" y="335" fill="#35CFC3" font-size="10">QoS 0/1 Pub/Sub</text>
+
+  <!-- Split arrows from Broker to Consumers -->
+  <path d="M 680 230 L 715 230 L 715 155 L 735 155" fill="none" stroke="#35CFC3" stroke-width="2" marker-end="url(#arrowTeal)"/>
+  <path d="M 680 265 L 735 265" fill="none" stroke="#35CFC3" stroke-width="2" marker-end="url(#arrowTeal)"/>
+  <path d="M 680 300 L 715 300 L 715 375 L 735 375" fill="none" stroke="#35CFC3" stroke-width="2" marker-end="url(#arrowTeal)"/>
+
+  <!-- Section 4: Consumer Applications -->
+  <!-- 1. Web Dashboard -->
+  <rect x="740" y="105" width="145" height="100" rx="10" fill="#15171b" stroke="rgba(255,255,255,0.1)" stroke-width="1.5"/>
+  <rect x="750" y="118" width="125" height="26" rx="5" fill="#8B6FF5"/>
+  <text x="758" y="136" fill="#ffffff" font-size="12" font-weight="700">Web Dashboard</text>
+  <text x="750" y="160" fill="#ffffff" font-size="10" font-weight="600">dashboard.html</text>
+  <text x="750" y="176" fill="#9ea3b0" font-size="10">MQTT.js over WebSocket</text>
+  <text x="750" y="192" fill="#35CFC3" font-size="9.5">Neo-Brutalist Live UI</text>
+
+  <!-- 2. Node-RED -->
+  <rect x="740" y="218" width="145" height="100" rx="10" fill="#15171b" stroke="rgba(255,255,255,0.1)" stroke-width="1.5"/>
+  <rect x="750" y="230" width="125" height="26" rx="5" fill="#FF6B6B"/>
+  <text x="758" y="248" fill="#ffffff" font-size="12" font-weight="700">Node-RED Flow</text>
+  <text x="750" y="272" fill="#ffffff" font-size="10" font-weight="600">nodered/flow.json</text>
+  <text x="750" y="288" fill="#9ea3b0" font-size="10">ui_table &amp; Metrics</text>
+  <text x="750" y="304" fill="#FFE66D" font-size="9.5">http://localhost:1880/ui</text>
+
+  <!-- 3. Python Logger -->
+  <rect x="740" y="330" width="145" height="95" rx="10" fill="#15171b" stroke="rgba(255,255,255,0.1)" stroke-width="1.5"/>
+  <rect x="750" y="342" width="125" height="26" rx="5" fill="#FFE66D"/>
+  <text x="758" y="360" fill="#121212" font-size="12" font-weight="700">Python Logger</text>
+  <text x="750" y="384" fill="#ffffff" font-size="10" font-weight="600">logger/logger.py</text>
+  <text x="750" y="400" fill="#9ea3b0" font-size="10">paho-mqtt client</text>
+  <text x="750" y="414" fill="#35CFC3" font-size="9.5">Appends labdrop_log.csv</text>
+</svg>

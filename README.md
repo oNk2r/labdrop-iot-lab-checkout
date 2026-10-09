@@ -1,56 +1,40 @@
-# LabDrop: Smart Lab Equipment Checkout System
+# LabDrop
 
-RFID-based lab equipment tracking using an ESP32 and MQTT. A student scans their
-ID card, then an equipment tag. The system updates the item's state, gives
-feedback on an OLED, LEDs and a buzzer, and publishes the event to a live
-dashboard and a CSV log.
+**Smart laboratory equipment checkout and tracking system using ESP32, RFID, MQTT, and Node-RED.**
 
-Built as an IoT mini project. Simulated in Wokwi.
+LabDrop tracks laboratory equipment borrowing and returns using RFID cards. The ESP32 processes scans, provides feedback through an OLED, LEDs, and buzzer, and publishes updates to a Node-RED dashboard through MQTT.
 
-## How it works
+## Features
 
-```
-RFID tag -> RC522 -> ESP32 -> OLED / LEDs / buzzer
-                        |
-                      Wi-Fi -> MQTT broker -> Web dashboard + Python CSV logger
-```
+- RFID-based student and equipment identification
+- Equipment checkout and return tracking
+- OLED, LED, and buzzer feedback
+- MQTT-based status and event updates
+- Node-RED dashboard for equipment and activity monitoring
+- CSV transaction logging
 
-## Hardware (simulated)
+## Tech Stack
 
-ESP32 DevKit, MFRC522 RFID reader, SSD1306 OLED, green and red LEDs, buzzer
+`ESP32` · `C++` · `MFRC522` · `SSD1306 OLED` · `MQTT` · `HiveMQ` · `Node-RED` · `Wokwi`
 
-## Run it
+## How It Works
 
-1. Open the Wokwi project: `<add-your-wokwi-link>` (or create a new ESP32 project and copy the files from `firmware/`).
-2. In `firmware/sketch.ino`, set `ROOT` to a unique topic name and add your card UIDs (scan a card in Wokwi, read the UID from the Serial Monitor).
-3. In `dashboard/dashboard.html`, set `TOPIC_ROOT` to the same name, then open the file in a browser.
-4. (Optional) `pip install -r logger/requirements.txt`, set `ROOT` in `logger/logger.py`, then run `python logger/logger.py`.
+1. Scan a registered student ID.
+2. Scan an equipment tag within 10 seconds to check it out.
+3. Scan the borrowed equipment tag again to return it.
+4. View equipment status and transaction activity on the Node-RED dashboard.
 
-## MQTT topics
+## Run the Project
 
-| Topic | Purpose |
-|---|---|
-| `ROOT/equipment/<id>` | Item state (retained) |
-| `ROOT/events` | Checkout/return log |
-| `ROOT/alerts` | Unknown tag scans |
-| `ROOT/status` | Device online/offline (Last Will) |
+- **Simulation:** [Wokwi Project](https://wokwi.com/projects/476883545027002369)
+- **Source Code:** [GitHub Repository](https://github.com/oNk2r/labdrop-iot-lab-checkout)
 
-## Screenshots
+Run the ESP32 simulation in Wokwi, import the Node-RED flow, and configure both to use the same MQTT broker and topic root.
 
-Add images to `docs/screenshots/` and link them here:
 
-```
-![Dashboard](docs/screenshots/dashboard.png)
-```
+## Hardware
 
-## Tech
+ESP32 DevKit, MFRC522 RFID reader, SSD1306 OLED, two LEDs, 220 Ω resistors, and a buzzer.
 
-C++ (Arduino), JavaScript, Python, MQTT (HiveMQ public broker), Wokwi
+*Currently simulated in Wokwi.*
 
-## Limitations / future work
-
-Public broker without authentication, no database, simulated hardware only.
-
-## Credits
-
-Libraries: MFRC522, Adafruit SSD1306/GFX, PubSubClient, MQTT.js, paho-mqtt.

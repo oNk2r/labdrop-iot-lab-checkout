@@ -8,7 +8,7 @@ from datetime import datetime
 import paho.mqtt.client as mqtt
 
 BROKER = "broker.hivemq.com"
-ROOT = "labdrop-CHANGE-ME"        # must match ROOT in sketch.ino
+ROOT = "labdrop-test-67"        # must match ROOT in sketch.ino
 FILE = "labdrop_log.csv"
 FIELDS = ["logged_at", "device_time", "item_id", "item_name", "event", "student"]
 
